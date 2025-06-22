@@ -1,4 +1,5 @@
-# LSTM-Based Nasdaq Stock Price Predictor
+# [LSTM-Based Nasdaq Stock Price Predictor]([url](https://nasdaq-10-stock-price-predictor.streamlit.app))
+<img width="1395" alt="image" src="https://github.com/user-attachments/assets/dc479780-a9eb-440e-b9a5-34ea2fe74355" />
 
 This is a web application that predicts future stock prices of technology companies listed on the Nasdaq using a Long Short-Term Memory (LSTM) neural network.
 
