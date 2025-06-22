@@ -89,14 +89,14 @@ def get_available_companies():
     if not os.path.exists("saved_models") or not os.path.exists("model_metadata"):
         return []
 
-    model_files = glob.glob("saved_models/*.h5")
+    model_files = glob.glob("stock-price-predictor/saved_models/*.h5")
     companies = []
 
     for model_file in model_files:
         try:
             company_name = os.path.basename(model_file).replace(
                 '_model.h5', '').replace('_', ' ')
-            metadata_file = f"model_metadata/{os.path.basename(model_file).replace('_model.h5', '_metadata.json')}"
+            metadata_file = f"stock-price-predictor/model_metadata/{os.path.basename(model_file).replace('_model.h5', '_metadata.json')}"
 
             if os.path.exists(metadata_file):
                 with open(metadata_file, 'r') as f:
@@ -120,8 +120,8 @@ def load_saved_model(company):
         c for c in company if c.isalnum() or c in (' ', '-', '_')).rstrip()
     clean_company_name = clean_company_name.replace(' ', '_')
 
-    model_filename = f"saved_models/{clean_company_name}_model.h5"
-    metadata_filename = f"model_metadata/{clean_company_name}_metadata.json"
+    model_filename = f"stock-price-predictor/saved_models/{clean_company_name}_model.h5"
+    metadata_filename = f"stock-price-predictor/model_metadata/{clean_company_name}_metadata.json"
 
     if not os.path.exists(model_filename) or not os.path.exists(metadata_filename):
         return None, None
