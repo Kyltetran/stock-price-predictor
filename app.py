@@ -514,27 +514,60 @@ st.markdown("""
         color: #1f77b4;
         text-align: center;
         margin-bottom: 2rem;
+        font-weight: bold;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
     }
     .prediction-box {
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
-        padding: 1.5rem;
+        padding: 2rem;
         border-radius: 1rem;
         text-align: center;
         margin: 1rem 0;
+        box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+    .prediction-box h3 {
+        margin-bottom: 1rem;
+        font-size: 1.2rem;
+    }
+    .prediction-box h2 {
+        font-size: 2.5rem;
+        margin: 0.5rem 0;
+        font-weight: bold;
     }
     .model-info {
-        background-color: #e8f5e8;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #007bff;
+        background: linear-gradient(135deg, #e8f5e8 0%, #f0f8f0 100%);
+        padding: 1.5rem;
+        border-radius: 1rem;
+        border-left: 5px solid #28a745;
         margin: 1rem 0;
         color: #155724;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    }
+    .metric-card {
+        background: white;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        margin: 0.5rem 0;
+        border-left: 4px solid #007bff;
     }
     .stAlert > div {
         background-color: #f8f9fa;
         border: 1px solid #dee2e6;
         border-radius: 0.5rem;
+    }
+    .sidebar .stSelectbox > div > div {
+        background-color: #f8f9fa;
+    }
+    .demo-warning {
+        background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%);
+        color: #2d3436;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin: 1rem 0;
+        border-left: 4px solid #fdcb6e;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -544,17 +577,10 @@ st.markdown("""
 
 def get_base_path():
     """Get the base path for the application"""
-    # Try to get the directory where the script is located
     try:
         base_path = os.path.dirname(os.path.abspath(__file__))
     except:
         base_path = os.getcwd()
-
-    # Debug: Show current working directory and base path
-    st.sidebar.write(f"Debug - Current working directory: {os.getcwd()}")
-    st.sidebar.write(f"Debug - Base path: {base_path}")
-    st.sidebar.write(f"Debug - Files in current directory: {os.listdir('.')}")
-
     return base_path
 
 
@@ -575,14 +601,11 @@ def load_nasdaq_data():
     for path in possible_paths:
         try:
             if os.path.exists(path):
-                st.sidebar.write(f"Debug - Found NASDAQ data at: {path}")
                 nasdaq = pd.read_csv(path)
                 return nasdaq
         except Exception as e:
-            st.sidebar.write(f"Debug - Error loading {path}: {str(e)}")
             continue
 
-    st.sidebar.write("Debug - NASDAQ data not found in any location")
     return None
 
 
@@ -613,24 +636,17 @@ def get_available_companies():
     for d in possible_model_dirs:
         if os.path.exists(d):
             model_dir = d
-            st.sidebar.write(f"Debug - Found model directory: {d}")
             break
 
     for d in possible_metadata_dirs:
         if os.path.exists(d):
             metadata_dir = d
-            st.sidebar.write(f"Debug - Found metadata directory: {d}")
             break
 
     if not model_dir or not metadata_dir:
-        st.sidebar.write(f"Debug - Model dir exists: {model_dir is not None}")
-        st.sidebar.write(
-            f"Debug - Metadata dir exists: {metadata_dir is not None}")
         return []
 
     model_files = glob.glob(os.path.join(model_dir, "*.h5"))
-    st.sidebar.write(f"Debug - Found {len(model_files)} model files")
-
     companies = []
 
     for model_file in model_files:
@@ -653,11 +669,7 @@ def get_available_companies():
                         'model_path': model_file,
                         'metadata_path': metadata_path
                     })
-                    st.sidebar.write(
-                        f"Debug - Added company: {metadata['company']}")
         except Exception as e:
-            st.sidebar.write(
-                f"Debug - Error processing {model_file}: {str(e)}")
             continue
 
     return companies
@@ -672,27 +684,17 @@ def load_saved_model(company_info):
     model_path = company_info.get('model_path')
     metadata_path = company_info.get('metadata_path')
 
-    st.sidebar.write(f"Debug - Attempting to load model from: {model_path}")
-    st.sidebar.write(
-        f"Debug - Attempting to load metadata from: {metadata_path}")
-
     if not model_path or not metadata_path:
-        st.sidebar.write("Debug - Missing model or metadata path")
         return None, None
 
     if not os.path.exists(model_path) or not os.path.exists(metadata_path):
-        st.sidebar.write(f"Debug - Model exists: {os.path.exists(model_path)}")
-        st.sidebar.write(
-            f"Debug - Metadata exists: {os.path.exists(metadata_path)}")
         return None, None
 
     # Load metadata first
     try:
         with open(metadata_path, 'r') as f:
             metadata = json.load(f)
-            st.sidebar.write("Debug - Metadata loaded successfully")
     except Exception as e:
-        st.sidebar.write(f"Debug - Could not load metadata: {str(e)}")
         return None, None
 
     try:
@@ -704,7 +706,6 @@ def load_saved_model(company_info):
 
         # Handle dtype policy issues
         try:
-            # Set default policy to avoid dtype issues
             tf.keras.mixed_precision.set_global_policy('float32')
         except:
             pass
@@ -722,6 +723,8 @@ def load_saved_model(company_info):
         class MockDTypePolicy:
             def __init__(self, name='float32'):
                 self.name = name
+                self.compute_dtype = name
+                self.variable_dtype = name
 
             def __call__(self):
                 return self
@@ -739,25 +742,19 @@ def load_saved_model(company_info):
         with custom_object_scope(custom_objects):
             try:
                 model = load_model(model_path)
-                st.sidebar.write(
-                    "Debug - Model loaded successfully with custom scope")
                 return model, metadata
             except Exception as e1:
-                st.sidebar.write(
-                    f"Debug - First load attempt failed: {str(e1)}")
+                pass
 
         try:
             model = load_model(model_path, compile=False,
                                custom_objects=custom_objects)
             model.compile(optimizer='adam', loss='mse', metrics=['mse'])
-            st.sidebar.write(
-                "Debug - Model loaded without compilation and recompiled")
             return model, metadata
         except Exception as e2:
-            st.sidebar.write(f"Debug - Second load attempt failed: {str(e2)}")
+            pass
 
         # Create a simple model for prediction (fallback)
-        st.sidebar.write("Debug - Creating fallback prediction model")
         from tensorflow.keras.models import Sequential
         from tensorflow.keras.layers import LSTM, Dense, Dropout
 
@@ -774,19 +771,24 @@ def load_saved_model(company_info):
         ])
 
         model.compile(optimizer='adam', loss='mse', metrics=['mse'])
-        st.sidebar.write("Debug - Fallback model created successfully")
+
+        # Show warning for fallback model
         st.warning("⚠️ Using fallback model - predictions may be less accurate")
 
         return model, metadata
 
     except Exception as e:
-        st.sidebar.write(f"Debug - All loading attempts failed: {str(e)}")
         return None, None
 
 
 def create_demo_mode():
     """Create a demo mode with sample data when no models are available"""
-    st.info("🎯 **Demo Mode** - No trained models found")
+    st.markdown("""
+    <div class="demo-warning">
+        <h3>🎯 Demo Mode Active</h3>
+        <p>No trained models found. Showing sample predictions for demonstration purposes.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
     # Generate sample data
     dates = pd.date_range(start='2023-01-01', end='2024-01-01', freq='D')
@@ -806,36 +808,40 @@ def create_demo_mode():
         y=prices[-30:],
         mode='lines',
         name='Historical Prices',
-        line=dict(color='#1f77b4', width=2)
+        line=dict(color='#1f77b4', width=3)
     ))
 
     fig.add_trace(go.Scatter(
         x=future_dates,
         y=future_prices,
         mode='lines+markers',
-        name='Predictions',
+        name='Sample Predictions',
         line=dict(color='#ff7f0e', width=3, dash='dash'),
-        marker=dict(size=8)
+        marker=dict(size=10)
     ))
 
     fig.update_layout(
-        title='Demo: Sample Stock Price Prediction',
+        title='📊 Demo: Sample Stock Price Prediction',
         xaxis_title='Date',
         yaxis_title='Price ($)',
         hovermode='x unified',
         template='plotly_white',
-        height=500
+        height=500,
+        font=dict(size=12)
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
-    with st.expander("📋 Setup Instructions"):
+    with st.expander("📋 Setup Instructions", expanded=True):
         st.markdown("""
-        **To use the full application:**
-        1. Train your models using the main notebook
-        2. Ensure model files are saved in `saved_models/` directory
-        3. Ensure metadata files are saved in `model_metadata/` directory
-        4. Place `processed_combined_nasdaq.csv` in the root directory
+        **To use the full application with real predictions:**
+        
+        1. **Train your models** using the main notebook
+        2. **Save model files** in `saved_models/` directory  
+        3. **Save metadata files** in `model_metadata/` directory
+        4. **Place dataset** `processed_combined_nasdaq.csv` in the root directory
+        
+        The app will automatically detect and load your trained models!
         """)
 
 
@@ -864,7 +870,6 @@ def predict_future_days(model, X_predict_norm, k):
 
     # Check if this is a fallback model (untrained)
     try:
-        # Test prediction to see if model works
         test_pred = model.predict(X_predict_norm, verbose=0)
         model_trained = True
     except:
@@ -872,12 +877,9 @@ def predict_future_days(model, X_predict_norm, k):
 
     if not model_trained:
         # Generate reasonable fake predictions based on last known values
-        st.sidebar.write(
-            "Debug - Using synthetic predictions (model not trained)")
         last_value = X_predict_norm[0, -1, 0]
         for i in range(k):
-            # Simple trend with some randomness
-            trend = np.random.normal(0, 0.01)  # Small random walk
+            trend = np.random.normal(0, 0.01)
             next_val = last_value + trend
             predictions.append(np.array([[next_val]]))
             last_value = next_val
@@ -894,8 +896,6 @@ def predict_future_days(model, X_predict_norm, k):
             X_predict_norm = np.concatenate(
                 (X_predict_norm[:, 1:, :], y_pred_reshaped), axis=1)
         except Exception as e:
-            st.sidebar.write(
-                f"Debug - Prediction failed at step {i}: {str(e)}")
             # Fallback to last known value with small variation
             if predictions:
                 last_pred = predictions[-1]
@@ -907,18 +907,59 @@ def predict_future_days(model, X_predict_norm, k):
 
     return np.array(predictions)
 
+
+def create_status_indicator(status, message):
+    """Create a colored status indicator"""
+    colors = {
+        'success': '#28a745',
+        'warning': '#ffc107',
+        'error': '#dc3545',
+        'info': '#17a2b8'
+    }
+
+    return f"""
+    <div style="display: flex; align-items: center; margin: 0.5rem 0;">
+        <div style="width: 12px; height: 12px; border-radius: 50%; background-color: {colors.get(status, '#6c757d')}; margin-right: 0.5rem;"></div>
+        <span style="color: {colors.get(status, '#6c757d')}; font-weight: 500;">{message}</span>
+    </div>
+    """
+
 # Main App
 
 
 def main():
     # Header
-    st.markdown('<h1 class="main-header">📈 Stock Price Predictor</h1>',
+    st.markdown('<h1 class="main-header">📈 AI Stock Price Predictor</h1>',
                 unsafe_allow_html=True)
+    st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666; margin-bottom: 2rem;">Powered by Deep Learning & LSTM Neural Networks</p>', unsafe_allow_html=True)
     st.markdown("---")
 
     # Load data and companies
-    nasdaq = load_nasdaq_data()
-    companies = get_available_companies()
+    with st.spinner("🔄 Loading data and models..."):
+        nasdaq = load_nasdaq_data()
+        companies = get_available_companies()
+
+    # Status indicators
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if nasdaq is not None:
+            st.markdown(create_status_indicator(
+                'success', 'Dataset loaded successfully'), unsafe_allow_html=True)
+        else:
+            st.markdown(create_status_indicator(
+                'error', 'Dataset not found'), unsafe_allow_html=True)
+
+    with col2:
+        if companies:
+            st.markdown(create_status_indicator(
+                'success', f'{len(companies)} trained models found'), unsafe_allow_html=True)
+        else:
+            st.markdown(create_status_indicator(
+                'warning', 'No trained models found'), unsafe_allow_html=True)
+
+    with col3:
+        st.markdown(create_status_indicator(
+            'info', 'System ready'), unsafe_allow_html=True)
 
     if not companies or nasdaq is None:
         st.error("❌ Required data or models not found.")
@@ -931,11 +972,12 @@ def main():
 
         # Company selection
         company_names = [comp['name'] for comp in companies]
-        selected_company = st.selectbox("📊 Select Company", company_names)
+        selected_company = st.selectbox(
+            "📊 Select Company", company_names, help="Choose a company to predict stock prices")
 
         # Days to predict
-        days_to_predict = st.slider(
-            "📅 Days to Predict", min_value=1, max_value=30, value=7)
+        days_to_predict = st.slider("📅 Days to Predict", min_value=1, max_value=30, value=7,
+                                    help="Select how many days ahead to predict")
 
         # Show model info
         selected_company_info = next(
@@ -944,11 +986,24 @@ def main():
         st.markdown("### 📋 Model Information")
         st.markdown(f"""
         <div class="model-info">
-            <strong>Company:</strong> {selected_company}<br>
-            <strong>MSE Score:</strong> {selected_company_info['mse']:.6f}<br>
-            <strong>Training Date:</strong> {selected_company_info['training_date'][:10]}
+            <strong>🏢 Company:</strong> {selected_company}<br>
+            <strong>🎯 MSE Score:</strong> {selected_company_info['mse']:.6f}<br>
+            <strong>📅 Training Date:</strong> {selected_company_info['training_date'][:10]}<br>
+            <strong>📊 Model Type:</strong> LSTM Neural Network
         </div>
         """, unsafe_allow_html=True)
+
+        # Additional info
+        st.markdown("### ℹ️ About This Model")
+        st.info("""
+        This model uses LSTM (Long Short-Term Memory) neural networks to analyze historical stock patterns and predict future prices.
+        
+        **Features used:**
+        - Opening price
+        - High price  
+        - Low price
+        - Trading volume
+        """)
 
     # Main content
     col1, col2 = st.columns([2, 1])
@@ -957,12 +1012,12 @@ def main():
         st.markdown("## 📈 Prediction Results")
 
         # Load model and make predictions
-        with st.spinner("Loading model and generating predictions..."):
+        with st.spinner("🧠 Loading model and generating predictions..."):
             model, metadata = load_saved_model(selected_company_info)
 
             if model is None:
                 st.error("❌ Could not load the selected model.")
-                st.error("Please check the debug information in the sidebar.")
+                st.error("Please check that your model files are properly saved.")
                 st.stop()
 
             # Get company data
@@ -1008,7 +1063,8 @@ def main():
             y=recent_prices,
             mode='lines',
             name='Historical Prices',
-            line=dict(color='#1f77b4', width=2)
+            line=dict(color='#1f77b4', width=3),
+            hovertemplate='<b>%{fullData.name}</b><br>Date: %{x}<br>Price: $%{y:.2f}<extra></extra>'
         ))
 
         # Predicted prices
@@ -1018,7 +1074,8 @@ def main():
             mode='lines+markers',
             name=f'Predicted Prices ({days_to_predict} days)',
             line=dict(color='#ff7f0e', width=3, dash='dash'),
-            marker=dict(size=8)
+            marker=dict(size=10, symbol='diamond'),
+            hovertemplate='<b>%{fullData.name}</b><br>Date: %{x}<br>Predicted Price: $%{y:.2f}<extra></extra>'
         ))
 
         # Add vertical line to separate historical and predicted
@@ -1029,28 +1086,37 @@ def main():
             y0=0,
             y1=1,
             yref="paper",
-            line=dict(color="gray", width=2, dash="dot"),
+            line=dict(color="rgba(128, 128, 128, 0.8)", width=2, dash="dot"),
         )
 
         # Add annotation for the vertical line
         fig.add_annotation(
             x=last_date,
             y=max(recent_prices),
-            text="Prediction Start",
+            text="🔮 Prediction Start",
             showarrow=True,
             arrowhead=2,
             arrowcolor="gray",
             bgcolor="white",
-            bordercolor="gray"
+            bordercolor="gray",
+            borderwidth=1
         )
 
         fig.update_layout(
-            title=f'Stock Price Prediction for {selected_company}',
+            title=f'📊 Stock Price Prediction for {selected_company}',
             xaxis_title='Date',
             yaxis_title='Price ($)',
             hovermode='x unified',
             template='plotly_white',
-            height=500
+            height=500,
+            font=dict(size=12),
+            showlegend=True,
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01
+            )
         )
 
         st.plotly_chart(fig, use_container_width=True)
@@ -1069,7 +1135,7 @@ def main():
         <div class="prediction-box">
             <h3>💰 Price Prediction</h3>
             <h2>${predicted_price:.2f}</h2>
-            <p>in {days_to_predict} days</p>
+            <p>in {days_to_predict} day{'s' if days_to_predict > 1 else ''}</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1079,6 +1145,22 @@ def main():
                   f"${price_change:.2f}", f"{price_change_pct:.1f}%")
         st.metric("Model Accuracy (MSE)", f"{metadata['mse_score']:.6f}")
 
+        # Trend indicator
+        if price_change > 0:
+            trend_emoji = "📈"
+            trend_text = "Bullish"
+            trend_color = "#28a745"
+        else:
+            trend_emoji = "📉"
+            trend_text = "Bearish"
+            trend_color = "#dc3545"
+
+        st.markdown(f"""
+        <div style="text-align: center; padding: 1rem; background-color: {trend_color}20; border-radius: 0.5rem; margin: 1rem 0;">
+            <h3 style="color: {trend_color}; margin: 0;">{trend_emoji} {trend_text} Trend</h3>
+        </div>
+        """, unsafe_allow_html=True)
+
         # Prediction table
         st.markdown("### 📅 Daily Predictions")
         pred_df = pd.DataFrame({
@@ -1086,23 +1168,24 @@ def main():
             'Date': [d.strftime('%Y-%m-%d') for d in future_dates],
             'Predicted Price': [f"${p[0]:.2f}" for p in predictions]
         })
-        st.dataframe(pred_df, use_container_width=True)
+        st.dataframe(pred_df, use_container_width=True, hide_index=True)
 
         # Download predictions
         csv = pred_df.to_csv(index=False)
         st.download_button(
             label="📥 Download Predictions",
             data=csv,
-            file_name=f'{selected_company}_predictions.csv',
-            mime='text/csv'
+            file_name=f'{selected_company}_predictions_{datetime.now().strftime("%Y%m%d")}.csv',
+            mime='text/csv',
+            help="Download predictions as CSV file"
         )
 
     # Footer
     st.markdown("---")
     st.markdown("""
     <div style='text-align: center; color: #666; margin-top: 2rem;'>
-        <p>📈 Stock Price Predictor | Built with Streamlit & TensorFlow</p>
-        <p><small>⚠️ This is for educational purposes only. Not financial advice.</small></p>
+        <p>📈 <strong>AI Stock Price Predictor</strong> | Built with Streamlit & TensorFlow</p>
+        <p><small>⚠️ <strong>Disclaimer:</strong> This is for educational purposes only. Not financial advice. Always consult with financial professionals before making investment decisions.</small></p>
     </div>
     """, unsafe_allow_html=True)
 
