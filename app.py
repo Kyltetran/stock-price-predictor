@@ -86,20 +86,40 @@ def load_nasdaq_data():
 @st.cache_data
 def get_available_companies():
     """Get list of companies with saved models"""
-    if not os.path.exists("saved_models") or not os.path.exists("model_metadata"):
+    possible_model_dirs = [
+        "saved_models",
+        "./saved_models",
+        "../saved_models",
+    ]
+
+    possible_metadata_dirs = [
+        "model_metadata",
+        "./model_metadata",
+        "../model_metadata",
+    ]
+
+    model_dir = next(
+        (d for d in possible_model_dirs if os.path.exists(d)), None)
+    metadata_dir = next(
+        (d for d in possible_metadata_dirs if os.path.exists(d)), None)
+
+    if not model_dir or not metadata_dir:
         return []
 
-    model_files = glob.glob("saved_models/*.h5")
+    model_files = glob.glob(os.path.join(model_dir, "*.h5"))
     companies = []
 
     for model_file in model_files:
         try:
-            company_name = os.path.basename(model_file).replace(
+            model_filename = os.path.basename(model_file)
+            company_name = model_filename.replace(
                 '_model.h5', '').replace('_', ' ')
-            metadata_file = f"model_metadata/{os.path.basename(model_file).replace('_model.h5', '_metadata.json')}"
+            metadata_filename = model_filename.replace(
+                '_model.h5', '_metadata.json')
+            metadata_path = os.path.join(metadata_dir, metadata_filename)
 
-            if os.path.exists(metadata_file):
-                with open(metadata_file, 'r') as f:
+            if os.path.exists(metadata_path):
+                with open(metadata_path, 'r') as f:
                     metadata = json.load(f)
                     companies.append({
                         'name': metadata['company'],
@@ -116,14 +136,27 @@ def get_available_companies():
 @st.cache_resource
 def load_saved_model(company):
     """Load a previously saved model"""
+    possible_model_dirs = ["saved_models", "./saved_models", "../saved_models"]
+    possible_metadata_dirs = ["model_metadata",
+                              "./model_metadata", "../model_metadata"]
+
     clean_company_name = "".join(
         c for c in company if c.isalnum() or c in (' ', '-', '_')).rstrip()
     clean_company_name = clean_company_name.replace(' ', '_')
 
-    model_filename = f"saved_models/{clean_company_name}_model.h5"
-    metadata_filename = f"model_metadata/{clean_company_name}_metadata.json"
+    model_dir = next(
+        (d for d in possible_model_dirs if os.path.exists(d)), None)
+    metadata_dir = next(
+        (d for d in possible_metadata_dirs if os.path.exists(d)), None)
 
-    if not os.path.exists(model_filename) or not os.path.exists(metadata_filename):
+    if not model_dir or not metadata_dir:
+        return None, None
+
+    model_path = os.path.join(model_dir, f"{clean_company_name}_model.h5")
+    metadata_path = os.path.join(
+        metadata_dir, f"{clean_company_name}_metadata.json")
+
+    if not os.path.exists(model_path) or not os.path.exists(metadata_path):
         return None, None
 
     try:
@@ -137,16 +170,17 @@ def load_saved_model(company):
         }
 
         try:
-            model = load_model(model_filename, custom_objects=custom_objects)
+            model = load_model(model_path, custom_objects=custom_objects)
         except Exception:
             try:
-                model = load_model(model_filename, compile=False)
+                model = load_model(model_path, compile=False)
                 model.compile(optimizer='adam', loss='mse', metrics=['mse'])
             except Exception:
                 return None, None
 
-        with open(metadata_filename, 'r') as f:
+        with open(metadata_path, 'r') as f:
             metadata = json.load(f)
+
         return model, metadata
     except Exception:
         return None, None
