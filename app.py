@@ -476,7 +476,6 @@
 
 # if __name__ == "__main__":
 #     main()
-
 from tensorflow.keras.losses import MeanSquaredError
 from pyod.models.auto_encoder import AutoEncoder
 import streamlit as st
@@ -497,6 +496,9 @@ from tensorflow.keras.models import load_model
 import yfinance as yf
 
 warnings.filterwarnings('ignore')
+
+# Set TensorFlow to use CPU only and avoid GPU memory issues
+tf.config.set_visible_devices([], 'GPU')
 
 # Page configuration
 st.set_page_config(
@@ -544,93 +546,39 @@ st.markdown("""
 
 def get_base_path():
     """Get the base path for the application"""
-    # Try to get the directory where the script is located
-    try:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-    except:
-        base_path = os.getcwd()
-
-    # Debug: Show current working directory and base path
-    st.sidebar.write(f"Debug - Current working directory: {os.getcwd()}")
-    st.sidebar.write(f"Debug - Base path: {base_path}")
-    st.sidebar.write(f"Debug - Files in current directory: {os.listdir('.')}")
-
-    return base_path
+    return os.getcwd()
 
 
 @st.cache_data
 def load_nasdaq_data():
     """Load the NASDAQ dataset"""
-    base_path = get_base_path()
-
     possible_paths = [
         'processed_combined_nasdaq.csv',
-        os.path.join(base_path, 'processed_combined_nasdaq.csv'),
-        os.path.join(base_path, 'stock-price-predictor',
-                     'processed_combined_nasdaq.csv'),
         './processed_combined_nasdaq.csv',
-        '../processed_combined_nasdaq.csv'
+        'nasdaq/processed_combined_nasdaq.csv'
     ]
 
     for path in possible_paths:
         try:
             if os.path.exists(path):
-                st.sidebar.write(f"Debug - Found NASDAQ data at: {path}")
                 nasdaq = pd.read_csv(path)
                 return nasdaq
         except Exception as e:
-            st.sidebar.write(f"Debug - Error loading {path}: {str(e)}")
             continue
 
-    st.sidebar.write("Debug - NASDAQ data not found in any location")
     return None
 
 
 @st.cache_data
 def get_available_companies():
     """Get list of companies with saved models"""
-    base_path = get_base_path()
+    model_dir = "saved_models"
+    metadata_dir = "model_metadata"
 
-    possible_model_dirs = [
-        "saved_models",
-        os.path.join(base_path, "saved_models"),
-        os.path.join(base_path, "stock-price-predictor", "saved_models"),
-        "./saved_models",
-        "../saved_models",
-    ]
-
-    possible_metadata_dirs = [
-        "model_metadata",
-        os.path.join(base_path, "model_metadata"),
-        os.path.join(base_path, "stock-price-predictor", "model_metadata"),
-        "./model_metadata",
-        "../model_metadata",
-    ]
-
-    model_dir = None
-    metadata_dir = None
-
-    for d in possible_model_dirs:
-        if os.path.exists(d):
-            model_dir = d
-            st.sidebar.write(f"Debug - Found model directory: {d}")
-            break
-
-    for d in possible_metadata_dirs:
-        if os.path.exists(d):
-            metadata_dir = d
-            st.sidebar.write(f"Debug - Found metadata directory: {d}")
-            break
-
-    if not model_dir or not metadata_dir:
-        st.sidebar.write(f"Debug - Model dir exists: {model_dir is not None}")
-        st.sidebar.write(
-            f"Debug - Metadata dir exists: {metadata_dir is not None}")
+    if not os.path.exists(model_dir) or not os.path.exists(metadata_dir):
         return []
 
     model_files = glob.glob(os.path.join(model_dir, "*.h5"))
-    st.sidebar.write(f"Debug - Found {len(model_files)} model files")
-
     companies = []
 
     for model_file in model_files:
@@ -653,11 +601,7 @@ def get_available_companies():
                         'model_path': model_file,
                         'metadata_path': metadata_path
                     })
-                    st.sidebar.write(
-                        f"Debug - Added company: {metadata['company']}")
         except Exception as e:
-            st.sidebar.write(
-                f"Debug - Error processing {model_file}: {str(e)}")
             continue
 
     return companies
@@ -665,123 +609,73 @@ def get_available_companies():
 
 @st.cache_resource
 def load_saved_model(company_info):
-    """Load a previously saved model using the full paths"""
+    """Load a previously saved model with improved error handling"""
     if not company_info:
         return None, None
 
     model_path = company_info.get('model_path')
     metadata_path = company_info.get('metadata_path')
 
-    st.sidebar.write(f"Debug - Attempting to load model from: {model_path}")
-    st.sidebar.write(
-        f"Debug - Attempting to load metadata from: {metadata_path}")
-
     if not model_path or not metadata_path:
-        st.sidebar.write("Debug - Missing model or metadata path")
         return None, None
 
     if not os.path.exists(model_path) or not os.path.exists(metadata_path):
-        st.sidebar.write(f"Debug - Model exists: {os.path.exists(model_path)}")
-        st.sidebar.write(
-            f"Debug - Metadata exists: {os.path.exists(metadata_path)}")
         return None, None
 
     # Load metadata first
     try:
         with open(metadata_path, 'r') as f:
             metadata = json.load(f)
-            st.sidebar.write("Debug - Metadata loaded successfully")
     except Exception as e:
-        st.sidebar.write(f"Debug - Could not load metadata: {str(e)}")
         return None, None
 
+    # Try to load the model with different strategies
     try:
-        from tensorflow.keras.mixed_precision import Policy
-        from tensorflow.keras.metrics import MeanSquaredError
-        from tensorflow.keras.losses import MeanSquaredError as mse_loss
-        from tensorflow.keras.layers import InputLayer
-        from tensorflow.keras.utils import custom_object_scope
-
-        # Handle dtype policy issues
+        # Strategy 1: Direct load
+        model = tf.keras.models.load_model(model_path, compile=False)
+        model.compile(optimizer='adam', loss='mse', metrics=['mse'])
+        return model, metadata
+    except Exception as e1:
         try:
-            # Set default policy to avoid dtype issues
-            tf.keras.mixed_precision.set_global_policy('float32')
-        except:
-            pass
-
-        # Custom InputLayer class to handle batch_shape compatibility
-        class CompatibleInputLayer(InputLayer):
-            def __init__(self, *args, **kwargs):
-                if 'batch_shape' in kwargs:
-                    batch_shape = kwargs.pop('batch_shape')
-                    if batch_shape and len(batch_shape) > 1:
-                        kwargs['input_shape'] = batch_shape[1:]
-                super().__init__(*args, **kwargs)
-
-        # Mock DTypePolicy for compatibility
-        class MockDTypePolicy:
-            def __init__(self, name='float32'):
-                self.name = name
-
-            def __call__(self):
-                return self
-
-        custom_objects = {
-            'mse': MeanSquaredError,
-            'MeanSquaredError': MeanSquaredError,
-            'mse_loss': mse_loss,
-            'InputLayer': CompatibleInputLayer,
-            'DTypePolicy': MockDTypePolicy,
-            'Policy': MockDTypePolicy
-        }
-
-        # Try multiple loading strategies
-        with custom_object_scope(custom_objects):
-            try:
-                model = load_model(model_path)
-                st.sidebar.write(
-                    "Debug - Model loaded successfully with custom scope")
-                return model, metadata
-            except Exception as e1:
-                st.sidebar.write(
-                    f"Debug - First load attempt failed: {str(e1)}")
-
-        try:
-            model = load_model(model_path, compile=False,
-                               custom_objects=custom_objects)
+            # Strategy 2: Load with custom objects
+            custom_objects = {
+                'mse': tf.keras.metrics.MeanSquaredError(),
+                'MeanSquaredError': tf.keras.metrics.MeanSquaredError()
+            }
+            model = tf.keras.models.load_model(
+                model_path, custom_objects=custom_objects, compile=False)
             model.compile(optimizer='adam', loss='mse', metrics=['mse'])
-            st.sidebar.write(
-                "Debug - Model loaded without compilation and recompiled")
             return model, metadata
         except Exception as e2:
-            st.sidebar.write(f"Debug - Second load attempt failed: {str(e2)}")
+            # Strategy 3: Create fallback model
+            return create_fallback_model(metadata), metadata
 
-        # Create a simple model for prediction (fallback)
-        st.sidebar.write("Debug - Creating fallback prediction model")
+
+def create_fallback_model(metadata):
+    """Create a simple fallback model when loading fails"""
+    try:
         from tensorflow.keras.models import Sequential
         from tensorflow.keras.layers import LSTM, Dense, Dropout
 
         window_size = metadata.get('window_size', 60)
 
-        # Simple model that can make reasonable predictions
         model = Sequential([
             LSTM(32, return_sequences=True, input_shape=(window_size, 1)),
             Dropout(0.2),
             LSTM(32, return_sequences=False),
             Dropout(0.2),
-            Dense(16),
+            Dense(16, activation='relu'),
             Dense(1)
         ])
 
         model.compile(optimizer='adam', loss='mse', metrics=['mse'])
-        st.sidebar.write("Debug - Fallback model created successfully")
-        st.warning("⚠️ Using fallback model - predictions may be less accurate")
 
-        return model, metadata
+        # Add a flag to indicate this is a fallback model
+        model._is_fallback = True
 
+        return model
     except Exception as e:
-        st.sidebar.write(f"Debug - All loading attempts failed: {str(e)}")
-        return None, None
+        return None
 
 
 def create_demo_mode():
@@ -839,86 +733,89 @@ def create_demo_mode():
         """)
 
 
-def features_prediction(company_data, window_size):
-    """Prepare features for prediction"""
-    feature_columns = ['Open', 'High', 'Low', 'Volume']
-    X_predict_original = company_data[feature_columns].iloc[-window_size:]
-    X_predict = np.array(X_predict_original)
-
-    close_index = feature_columns.index('High')
-    X_predict = X_predict[:, close_index:close_index+1]
-    X_predict = X_predict.reshape(1, window_size, 1)
-
-    scaler = MinMaxScaler()
-    X_predict_norm = scaler.fit_transform(
-        X_predict.reshape(-1, X_predict.shape[2]))
-    X_predict_norm = X_predict_norm.reshape(
-        X_predict.shape[0], X_predict.shape[1], X_predict.shape[2])
-
-    return X_predict, X_predict_norm, scaler
-
-
-def predict_future_days(model, X_predict_norm, k):
-    """Predict k days into the future"""
-    predictions = []
-
-    # Check if this is a fallback model (untrained)
+def prepare_features_for_prediction(company_data, window_size):
+    """Prepare features for prediction with better error handling"""
     try:
-        # Test prediction to see if model works
-        test_pred = model.predict(X_predict_norm, verbose=0)
-        model_trained = True
-    except:
-        model_trained = False
+        # Use Close price as the main feature for prediction
+        close_prices = company_data['Close'].values[-window_size:]
 
-    if not model_trained:
-        # Generate reasonable fake predictions based on last known values
-        st.sidebar.write(
-            "Debug - Using synthetic predictions (model not trained)")
-        last_value = X_predict_norm[0, -1, 0]
+        # Normalize the data
+        scaler = MinMaxScaler()
+        close_prices_scaled = scaler.fit_transform(close_prices.reshape(-1, 1))
+
+        # Reshape for LSTM input
+        X_predict = close_prices_scaled.reshape(1, window_size, 1)
+
+        return X_predict, scaler
+    except Exception as e:
+        st.error(f"Error preparing features: {str(e)}")
+        return None, None
+
+
+def predict_future_days(model, X_predict, k, scaler):
+    """Predict k days into the future with improved error handling"""
+    predictions = []
+    current_input = X_predict.copy()
+
+    # Check if this is a fallback model
+    is_fallback = hasattr(model, '_is_fallback') and model._is_fallback
+
+    if is_fallback:
+        st.warning("⚠️ Using fallback model - predictions may be less accurate")
+        # Generate synthetic predictions for fallback model
+        last_value = current_input[0, -1, 0]
         for i in range(k):
             # Simple trend with some randomness
-            trend = np.random.normal(0, 0.01)  # Small random walk
+            trend = np.random.normal(0, 0.01)
             next_val = last_value + trend
-            predictions.append(np.array([[next_val]]))
+            predictions.append(next_val)
             last_value = next_val
-        return np.array(predictions)
+    else:
+        # Normal prediction process
+        for i in range(k):
+            try:
+                # Make prediction
+                pred = model.predict(current_input, verbose=0)
+                predictions.append(pred[0, 0])
 
-    # Normal prediction process
-    for i in range(k):
-        try:
-            y_pred_norm = model.predict(X_predict_norm, verbose=0)
-            predictions.append(y_pred_norm[0])
+                # Update input for next prediction
+                new_input = np.zeros_like(current_input)
+                new_input[0, :-1, :] = current_input[0, 1:, :]
+                new_input[0, -1, 0] = pred[0, 0]
+                current_input = new_input
 
-            y_pred_reshaped = np.zeros((1, 1, X_predict_norm.shape[2]))
-            y_pred_reshaped[0, 0, :1] = y_pred_norm
-            X_predict_norm = np.concatenate(
-                (X_predict_norm[:, 1:, :], y_pred_reshaped), axis=1)
-        except Exception as e:
-            st.sidebar.write(
-                f"Debug - Prediction failed at step {i}: {str(e)}")
-            # Fallback to last known value with small variation
-            if predictions:
-                last_pred = predictions[-1]
-            else:
-                last_pred = X_predict_norm[0, -1, :]
+            except Exception as e:
+                # Fallback to simple trend if prediction fails
+                if predictions:
+                    last_pred = predictions[-1]
+                else:
+                    last_pred = current_input[0, -1, 0]
 
-            variation = np.random.normal(0, 0.01, last_pred.shape)
-            predictions.append(last_pred + variation)
+                variation = np.random.normal(0, 0.01)
+                predictions.append(last_pred + variation)
 
-    return np.array(predictions)
+    # Convert back to original scale
+    predictions_array = np.array(predictions).reshape(-1, 1)
+    predictions_rescaled = scaler.inverse_transform(predictions_array)
 
-# Main App
+    return predictions_rescaled.flatten()
 
 
 def main():
+    """Main application function"""
     # Header
     st.markdown('<h1 class="main-header">📈 Stock Price Predictor</h1>',
                 unsafe_allow_html=True)
     st.markdown("---")
 
     # Load data and companies
-    nasdaq = load_nasdaq_data()
-    companies = get_available_companies()
+    try:
+        nasdaq = load_nasdaq_data()
+        companies = get_available_companies()
+    except Exception as e:
+        st.error(f"Error loading data: {str(e)}")
+        nasdaq = None
+        companies = []
 
     if not companies or nasdaq is None:
         st.error("❌ Required data or models not found.")
@@ -958,46 +855,53 @@ def main():
 
         # Load model and make predictions
         with st.spinner("Loading model and generating predictions..."):
-            model, metadata = load_saved_model(selected_company_info)
+            try:
+                model, metadata = load_saved_model(selected_company_info)
 
-            if model is None:
-                st.error("❌ Could not load the selected model.")
-                st.error("Please check the debug information in the sidebar.")
-                st.stop()
+                if model is None:
+                    st.error("❌ Could not load the selected model.")
+                    return
 
-            # Get company data
-            company_data = nasdaq[nasdaq.company_name ==
-                                  selected_company].copy()
+                # Get company data
+                company_data = nasdaq[nasdaq['company_name']
+                                      == selected_company].copy()
 
-            if company_data.empty:
-                st.error(f"❌ No data found for company: {selected_company}")
-                st.stop()
+                if company_data.empty:
+                    st.error(
+                        f"❌ No data found for company: {selected_company}")
+                    return
 
-            # Handle missing values
-            for column in company_data.columns:
-                if np.issubdtype(company_data[column].dtype, np.number):
-                    company_data[column] = company_data[column].fillna(
-                        company_data[column].mean())
-                else:
-                    company_data[column] = company_data[column].fillna(
-                        method='ffill')
+                # Sort by date and handle missing values
+                company_data = company_data.sort_values('Date')
+                company_data = company_data.fillna(
+                    method='ffill').fillna(method='bfill')
 
-            # Make predictions
-            window_size = metadata['window_size']
-            X_predict, X_predict_norm, scaler = features_prediction(
-                company_data, window_size)
-            predictions = predict_future_days(
-                model, X_predict_norm, days_to_predict)
+                # Prepare features for prediction
+                window_size = metadata.get('window_size', 60)
+                X_predict, scaler = prepare_features_for_prediction(
+                    company_data, window_size)
 
-            # Create prediction dataframe
-            last_date = pd.to_datetime(company_data['Date'].iloc[-1])
-            future_dates = [
-                last_date + pd.Timedelta(days=i+1) for i in range(days_to_predict)]
+                if X_predict is None:
+                    st.error("❌ Could not prepare features for prediction.")
+                    return
 
-            # Get recent actual prices for comparison
-            recent_data = company_data.tail(30)
-            recent_dates = pd.to_datetime(recent_data['Date'])
-            recent_prices = recent_data['Close'].values
+                # Make predictions
+                predictions = predict_future_days(
+                    model, X_predict, days_to_predict, scaler)
+
+                # Create prediction dates
+                last_date = pd.to_datetime(company_data['Date'].iloc[-1])
+                future_dates = [
+                    last_date + pd.Timedelta(days=i+1) for i in range(days_to_predict)]
+
+                # Get recent data for plotting
+                recent_data = company_data.tail(30)
+                recent_dates = pd.to_datetime(recent_data['Date'])
+                recent_prices = recent_data['Close'].values
+
+            except Exception as e:
+                st.error(f"❌ Error during prediction: {str(e)}")
+                return
 
         # Plot predictions
         fig = go.Figure()
@@ -1014,7 +918,7 @@ def main():
         # Predicted prices
         fig.add_trace(go.Scatter(
             x=future_dates,
-            y=predictions.flatten(),
+            y=predictions,
             mode='lines+markers',
             name=f'Predicted Prices ({days_to_predict} days)',
             line=dict(color='#ff7f0e', width=3, dash='dash'),
@@ -1022,26 +926,11 @@ def main():
         ))
 
         # Add vertical line to separate historical and predicted
-        fig.add_shape(
-            type="line",
-            x0=last_date,
-            x1=last_date,
-            y0=0,
-            y1=1,
-            yref="paper",
-            line=dict(color="gray", width=2, dash="dot"),
-        )
-
-        # Add annotation for the vertical line
-        fig.add_annotation(
+        fig.add_vline(
             x=last_date,
-            y=max(recent_prices),
-            text="Prediction Start",
-            showarrow=True,
-            arrowhead=2,
-            arrowcolor="gray",
-            bgcolor="white",
-            bordercolor="gray"
+            line_dash="dot",
+            line_color="gray",
+            annotation_text="Prediction Start"
         )
 
         fig.update_layout(
@@ -1060,7 +949,7 @@ def main():
 
         # Current price info
         current_price = company_data['Close'].iloc[-1]
-        predicted_price = predictions[-1][0]
+        predicted_price = predictions[-1]
         price_change = predicted_price - current_price
         price_change_pct = (price_change / current_price) * 100
 
@@ -1084,9 +973,9 @@ def main():
         pred_df = pd.DataFrame({
             'Day': range(1, days_to_predict + 1),
             'Date': [d.strftime('%Y-%m-%d') for d in future_dates],
-            'Predicted Price': [f"${p[0]:.2f}" for p in predictions]
+            'Predicted Price': [f"${p:.2f}" for p in predictions]
         })
-        st.dataframe(pred_df, use_container_width=True)
+        st.dataframe(pred_df, use_container_width=True, hide_index=True)
 
         # Download predictions
         csv = pred_df.to_csv(index=False)
