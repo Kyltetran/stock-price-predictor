@@ -136,9 +136,8 @@ def get_available_companies():
 @st.cache_resource
 def load_saved_model(company):
     """Load a previously saved model"""
-    possible_model_dirs = ["saved_models", "./saved_models", "../saved_models"]
-    possible_metadata_dirs = ["model_metadata",
-                              "./model_metadata", "../model_metadata"]
+    possible_model_dirs = ["saved_models"]
+    possible_metadata_dirs = ["model_metadata"]
 
     clean_company_name = "".join(
         c for c in company if c.isalnum() or c in (' ', '-', '_')).rstrip()
@@ -150,6 +149,7 @@ def load_saved_model(company):
         (d for d in possible_metadata_dirs if os.path.exists(d)), None)
 
     if not model_dir or not metadata_dir:
+        st.warning("Model or metadata directory not found.")
         return None, None
 
     model_path = os.path.join(model_dir, f"{clean_company_name}_model.h5")
@@ -157,6 +157,8 @@ def load_saved_model(company):
         metadata_dir, f"{clean_company_name}_metadata.json")
 
     if not os.path.exists(model_path) or not os.path.exists(metadata_path):
+        st.warning(
+            f"Model or metadata file missing: {model_path}, {metadata_path}")
         return None, None
 
     try:
@@ -171,18 +173,21 @@ def load_saved_model(company):
 
         try:
             model = load_model(model_path, custom_objects=custom_objects)
-        except Exception:
+        except Exception as e1:
+            st.error(f"⚠️ Error loading model with custom_objects: {e1}")
             try:
                 model = load_model(model_path, compile=False)
                 model.compile(optimizer='adam', loss='mse', metrics=['mse'])
-            except Exception:
+            except Exception as e2:
+                st.error(f"⚠️ Error loading model without compilation: {e2}")
                 return None, None
 
         with open(metadata_path, 'r') as f:
             metadata = json.load(f)
 
         return model, metadata
-    except Exception:
+    except Exception as e:
+        st.error(f"⚠️ Unexpected error: {e}")
         return None, None
 
 
