@@ -690,11 +690,23 @@ def load_saved_model(company_info):
     try:
         from tensorflow.keras.metrics import MeanSquaredError
         from tensorflow.keras.losses import MeanSquaredError as mse_loss
+        from tensorflow.keras.layers import InputLayer
+
+        # Custom InputLayer class to handle batch_shape compatibility
+        class CompatibleInputLayer(InputLayer):
+            def __init__(self, *args, **kwargs):
+                # Convert batch_shape to input_shape if present
+                if 'batch_shape' in kwargs:
+                    batch_shape = kwargs.pop('batch_shape')
+                    if batch_shape and len(batch_shape) > 1:
+                        kwargs['input_shape'] = batch_shape[1:]
+                super().__init__(*args, **kwargs)
 
         custom_objects = {
             'mse': MeanSquaredError,
             'MeanSquaredError': MeanSquaredError,
-            'mse_loss': mse_loss
+            'mse_loss': mse_loss,
+            'InputLayer': CompatibleInputLayer
         }
 
         try:
@@ -704,14 +716,55 @@ def load_saved_model(company_info):
         except Exception as e1:
             st.sidebar.write(f"Debug - First load attempt failed: {str(e1)}")
             try:
-                model = load_model(model_path, compile=False)
+                # Try loading without compilation and recompile
+                model = load_model(model_path, compile=False,
+                                   custom_objects=custom_objects)
                 model.compile(optimizer='adam', loss='mse', metrics=['mse'])
                 st.sidebar.write(
                     "Debug - Model loaded and recompiled successfully")
             except Exception as e2:
                 st.sidebar.write(
                     f"Debug - Second load attempt failed: {str(e2)}")
-                return None, None
+                try:
+                    # Last resort: try to load weights only and rebuild model
+                    st.sidebar.write(
+                        "Debug - Attempting to rebuild model from metadata")
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+
+                    # Create a simple LSTM model based on metadata
+                    from tensorflow.keras.models import Sequential
+                    from tensorflow.keras.layers import LSTM, Dense, Dropout
+
+                    window_size = metadata.get('window_size', 60)
+
+                    model = Sequential([
+                        LSTM(50, return_sequences=True,
+                             input_shape=(window_size, 1)),
+                        Dropout(0.2),
+                        LSTM(50, return_sequences=False),
+                        Dropout(0.2),
+                        Dense(25),
+                        Dense(1)
+                    ])
+
+                    model.compile(optimizer='adam',
+                                  loss='mse', metrics=['mse'])
+
+                    # Try to load weights
+                    try:
+                        model.load_weights(model_path)
+                        st.sidebar.write(
+                            "Debug - Model rebuilt and weights loaded successfully")
+                    except Exception as e3:
+                        st.sidebar.write(
+                            f"Debug - Could not load weights: {str(e3)}")
+                        return None, None
+
+                except Exception as e3:
+                    st.sidebar.write(
+                        f"Debug - Model rebuild failed: {str(e3)}")
+                    return None, None
 
         with open(metadata_path, 'r') as f:
             metadata = json.load(f)
